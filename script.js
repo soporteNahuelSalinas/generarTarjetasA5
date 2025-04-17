@@ -101,36 +101,109 @@ async function shortenUrl(url) {
     return shortUrl.trim();
   }
   
-
-// Genera PDF A5 con jsPDF y QRious
+// Genera PDF A5 con jsPDF y QRious (layout con bloques azules y texto blanco)
 async function createPdfCard(data, shortUrl) {
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ format: 'a5', unit: 'mm' });
-
-  // Encabezado
-  doc.setFontSize(20);
-  doc.text(data.nombre, 15, 20);
-
-  // Lista de especificaciones
-  doc.setFontSize(12);
-  let y = 30;
-  for (let key of ['cpu','ram','almacenamiento','pantalla','sistemaOperativo']) {
-    const { especificacion, mensaje } = data[key];
-    doc.text(`${key.toUpperCase()}: ${especificacion}`, 15, y);
-    doc.text(`→ ${mensaje}`, 20, y + 6);
-    y += 12;
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ format: 'a5', unit: 'mm' });
+  
+    const pageW  = doc.internal.pageSize.getWidth();
+    const pageH  = doc.internal.pageSize.getHeight();
+    const margin = 15;
+  
+    // 1) NOMBRE (grande y centrado)
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(22);
+    doc.setTextColor(0, 51, 153);
+    doc.text(data.nombre, pageW / 2, margin, { align: 'center' });
+  
+    // 2) QR
+    const qrSize = 40;
+    const qrX    = pageW - margin - qrSize;
+    const qrY    = margin + 10;
+    const qr     = new QRious({ value: shortUrl, size: qrSize * 10 });
+    doc.addImage(qr.toDataURL(), 'PNG', qrX, qrY, qrSize, qrSize);
+  
+    // 3) Instrucción bajo el QR
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(0, 0, 0);
+    doc.text(
+      'escaneá para ver el producto en nuestra tienda web',
+      pageW / 2,
+      qrY + qrSize + 6,
+      { align: 'center', maxWidth: pageW - 2 * margin }
+    );
+  
+    // 4) BLOQUES DE ESPECIFICACIONES
+    const specs = Object.entries(data)
+      .filter(([k]) => k !== 'nombre');  // sacamos el nombre
+    const colGap = 8;
+    const usableW = pageW - 2 * margin;
+    const colW   = (usableW - colGap) / 2;
+    let cursorY = qrY + qrSize + 15;
+    const headerH = 10;
+    const msgH    = 6;
+    const blockH  = headerH + msgH;
+  
+    // Colores
+    const blueRGB = [0, 51, 153];
+  
+    for (let i = 0; i < specs.length; i += 2) {
+      const row = specs.slice(i, i + 2);
+      row.forEach(([_, val], idx) => {
+        const x = margin + idx * (colW + colGap);
+        // 4.1) Dibujo del borde redondeado
+        doc.setDrawColor(...blueRGB);
+        doc.roundedRect(x, cursorY, colW, blockH, 2, 2, 'S');
+  
+        // 4.2) Header (fondo azul)
+        doc.setFillColor(...blueRGB);
+        doc.roundedRect(x, cursorY, colW, headerH, 2, 2, 'F');
+  
+        // 4.3) Texto de la especificación (blanco, negrita)
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(255, 255, 255);
+        doc.text(
+          val.especificacion,
+          x + colW / 2,
+          cursorY + headerH / 2 + 3,
+          { align: 'center', maxWidth: colW - 4 }
+        );
+  
+        // 4.4) Mensaje descriptivo (negro, normal)
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(0, 0, 0);
+        doc.text(
+          val.mensaje,
+          x + 2,
+          cursorY + headerH + msgH / 2 + 2,
+          { maxWidth: colW - 4 }
+        );
+      });
+  
+      cursorY += blockH + 8;  // espacio vertical antes de la siguiente fila
+  
+      // Si es fila impar (solo un item), avanzamos igual
+      if (row.length === 1) {
+        cursorY += blockH + 8;
+      }
+    }
+  
+    // 5) PIE DE PÁGINA
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(7);
+    doc.setTextColor(100);
+    doc.text(
+      'Especificaciones orientativas. Su experiencia puede variar según el uso',
+      pageW / 2,
+      pageH - margin,
+      { align: 'center', maxWidth: pageW - 2 * margin }
+    );
+  
+    // 6) DESCARGA
+    const filename = `tarjeta_${data.nombre.replace(/\s+/g, '_')}.pdf`;
+    doc.save(filename);
   }
-
-  // Generar QR
-  const qr = new QRious({ value: shortUrl, size: 120 });
-  const qrDataUrl = qr.toDataURL();
-  doc.addImage(qrDataUrl, 'PNG', 15, y + 10, 40, 40);
-
-  // URL acortada
-  doc.setFontSize(10);
-  doc.text(shortUrl, 60, y + 30, { maxWidth: 100 });
-
-  // Descargar
-  const filename = `tarjeta_${data.nombre.replace(/\s+/g,'_')}.pdf`;
-  doc.save(filename);
-}
+  
