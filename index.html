@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Generador de Tarjeta A5</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style> body { font-family: 'Poppins', sans-serif; } </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
+  <div class="w-full max-w-lg bg-gray-800 rounded-2xl shadow-xl p-6 space-y-6">
+    <h1 class="text-2xl font-semibold text-center">Tarjeta de Producto (A5)</h1>
+
+    <!-- Paso 1: Búsqueda -->
+    <div id="step1" class="space-y-4">
+      <input id="productInput" type="text" placeholder="Nombre del producto"
+             class="w-full p-3 rounded-md bg-gray-700 text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500"/>
+      <button id="searchBtn"
+              class="w-full bg-indigo-600 hover:bg-indigo-700 py-2 rounded-md transition">
+        Buscar
+      </button>
+      <div id="responseContainer" 
+           class="bg-gray-700 rounded-md p-4 text-sm overflow-auto max-h-64">
+        <p class="text-gray-400 italic">Esperando búsqueda…</p>
+      </div>
+      <div id="actions" class="flex justify-between space-x-4 hidden">
+        <button id="retryBtn" class="w-1/2 bg-red-600 hover:bg-red-700 py-2 rounded-md">Reintentar</button>
+        <button id="nextBtn"  class="w-1/2 bg-green-600 hover:bg-green-700 py-2 rounded-md">Siguiente</button>
+      </div>
+    </div>
+
+    <!-- Paso 2: URL + Generación -->
+    <div id="step2" class="space-y-4 hidden">
+      <input id="productUrl" type="url" placeholder="URL del producto"
+             class="w-full p-3 rounded-md bg-gray-700 text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500"/>
+      <button id="generateCardBtn"
+              class="w-full bg-blue-600 hover:bg-blue-700 py-2 rounded-md transition">
+        Acortar y Generar Tarjeta
+      </button>
+      <p id="status" class="text-sm italic"></p>
+    </div>
+  </div>
+
+  <!-- Librerías para QR y PDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
