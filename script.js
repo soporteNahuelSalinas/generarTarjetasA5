@@ -92,7 +92,7 @@ generateCardBtn.addEventListener('click', async () => {
 // TinyURL API
 // Acorta la URL usando el endpoint gratuito de TinyURL
 async function shortenUrl(url) {
-    const apiEndpoint = 'http://tinyurl.com/api-create.php?url=';
+    const apiEndpoint = 'https://tinyurl.com/api-create.php?url=';
     const resp = await fetch(apiEndpoint + encodeURIComponent(url));
     if (!resp.ok) {
       throw new Error(`Error al acortar URL: HTTP ${resp.status}`);
