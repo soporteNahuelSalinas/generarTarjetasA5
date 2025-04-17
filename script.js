@@ -105,105 +105,114 @@ async function shortenUrl(url) {
 async function createPdfCard(data, shortUrl) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ format: 'a5', unit: 'mm' });
-  
-    const pageW  = doc.internal.pageSize.getWidth();
-    const pageH  = doc.internal.pageSize.getHeight();
+
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
     const margin = 15;
-  
+
+    // Definición de colores
+    const titleBlueRGB = [0, 51, 153]; // Azul oscuro para títulos y bordes
+    const lightBlueRGB = [27, 77, 151]; // Azul celeste para textos secundarios
+
     // 1) NOMBRE (grande y centrado)
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(22);
-    doc.setTextColor(0, 51, 153);
+    doc.setFontSize(32); // Tamaño grande para el título principal
+    doc.setTextColor(...titleBlueRGB); // Azul oscuro para el título
     doc.text(data.nombre, pageW / 2, margin, { align: 'center' });
-  
-    // 2) QR
-    const qrSize = 40;
-    const qrX    = pageW - margin - qrSize;
-    const qrY    = margin + 10;
-    const qr     = new QRious({ value: shortUrl, size: qrSize * 10 });
+
+    // 2) QR (centrado con borde)
+    const qrSize = 50; // Tamaño del QR
+    const qrX = pageW / 2 - qrSize / 2; // Centramos horizontalmente
+    const qrY = margin + 10;
+    const qr = new QRious({ value: shortUrl, size: qrSize * 10 });
+
+    // Dibujamos el borde alrededor del QR
+    doc.setDrawColor(...titleBlueRGB); // Usamos el mismo color que el título
+    doc.rect(qrX - 3, qrY - 3, qrSize + 6, qrSize + 6, 'S'); // Borde con margen
+
+    // Añadimos el QR dentro del borde
     doc.addImage(qr.toDataURL(), 'PNG', qrX, qrY, qrSize, qrSize);
-  
+
     // 3) Instrucción bajo el QR
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(12); // Tamaño legible para la instrucción
+    doc.setTextColor(...lightBlueRGB); // Aplicamos color azul celeste
     doc.text(
-      'escaneá para ver el producto en nuestra tienda web',
-      pageW / 2,
-      qrY + qrSize + 6,
-      { align: 'center', maxWidth: pageW - 2 * margin }
+        'Escaneá para ver el producto en nuestra tienda web',
+        pageW / 2,
+        qrY + qrSize + 8, // Espaciado ajustado
+        { align: 'center', maxWidth: pageW - 2 * margin }
     );
-  
+
     // 4) BLOQUES DE ESPECIFICACIONES
     const specs = Object.entries(data)
-      .filter(([k]) => k !== 'nombre');  // sacamos el nombre
+        .filter(([k]) => k !== 'nombre'); // Sacamos el nombre
     const colGap = 8;
     const usableW = pageW - 2 * margin;
-    const colW   = (usableW - colGap) / 2;
-    let cursorY = qrY + qrSize + 15;
-    const headerH = 10;
-    const msgH    = 6;
-    const blockH  = headerH + msgH;
-  
-    // Colores
-    const blueRGB = [0, 51, 153];
-  
+    const colW = (usableW - colGap) / 2;
+    let cursorY = qrY + qrSize + 20; // Espaciado ajustado
+    const headerH = 12; // Alto del header
+    const msgH = 8; // Alto del mensaje
+    const blockH = headerH + msgH;
+
     for (let i = 0; i < specs.length; i += 2) {
-      const row = specs.slice(i, i + 2);
-      row.forEach(([_, val], idx) => {
-        const x = margin + idx * (colW + colGap);
-        // 4.1) Dibujo del borde redondeado
-        doc.setDrawColor(...blueRGB);
-        doc.roundedRect(x, cursorY, colW, blockH, 2, 2, 'S');
-  
-        // 4.2) Header (fondo azul)
-        doc.setFillColor(...blueRGB);
-        doc.roundedRect(x, cursorY, colW, headerH, 2, 2, 'F');
-  
-        // 4.3) Texto de la especificación (blanco, negrita)
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(11);
-        doc.setTextColor(255, 255, 255);
-        doc.text(
-          val.especificacion,
-          x + colW / 2,
-          cursorY + headerH / 2 + 3,
-          { align: 'center', maxWidth: colW - 4 }
-        );
-  
-        // 4.4) Mensaje descriptivo (negro, normal)
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        doc.setTextColor(0, 0, 0);
-        doc.text(
-          val.mensaje,
-          x + 2,
-          cursorY + headerH + msgH / 2 + 2,
-          { maxWidth: colW - 4 }
-        );
-      });
-  
-      cursorY += blockH + 8;  // espacio vertical antes de la siguiente fila
-  
-      // Si es fila impar (solo un item), avanzamos igual
-      if (row.length === 1) {
-        cursorY += blockH + 8;
-      }
+        const row = specs.slice(i, i + 2);
+        row.forEach(([_, val], idx) => {
+            const x = margin + idx * (colW + colGap);
+            // 4.1) Dibujo del borde redondeado
+            doc.setDrawColor(...titleBlueRGB);
+            doc.roundedRect(x, cursorY, colW, blockH, 2, 2, 'S');
+
+            // 4.2) Header (fondo azul)
+            doc.setFillColor(...titleBlueRGB);
+            doc.roundedRect(x, cursorY, colW, headerH, 2, 2, 'F');
+
+            // 4.3) Texto de la especificación (blanco, negrita)
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(20); 
+            doc.setTextColor(255, 255, 255); // Blanco para el título
+            doc.text(
+                val.especificacion,
+                x + colW / 2,
+                cursorY + headerH / 2 + 3,
+                { align: 'center', maxWidth: colW - 4 }
+            );
+
+            // 4.4) Mensaje descriptivo (azul celeste, normal, centrado)
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(12); 
+            doc.setTextColor(...lightBlueRGB); // Aplicamos color azul celeste
+
+            // Calculamos la posición Y para centrar el mensaje
+            const messageY = cursorY + headerH + (msgH / 2) + 2;
+            doc.text(
+                val.mensaje,
+                x + colW / 2, // Centramos el texto horizontalmente
+                messageY,     // Posición Y ajustada para centrar verticalmente
+                { align: 'center', maxWidth: colW - 4 }
+            );
+        });
+
+        cursorY += blockH + 8; // Espacio vertical antes de la siguiente fila
+
+        // Si es fila impar (solo un item), avanzamos igual
+        if (row.length === 1) {
+            cursorY += blockH + 8;
+        }
     }
-  
+
     // 5) PIE DE PÁGINA
     doc.setFont('helvetica', 'italic');
-    doc.setFontSize(7);
-    doc.setTextColor(100);
+    doc.setFontSize(12); // Tamaño legible para el pie de página
+    doc.setTextColor(...lightBlueRGB); // Aplicamos color azul celeste
     doc.text(
-      'Especificaciones orientativas. Su experiencia puede variar según el uso',
-      pageW / 2,
-      pageH - margin,
-      { align: 'center', maxWidth: pageW - 2 * margin }
+        'Especificaciones orientativas. Su experiencia puede variar según el uso',
+        pageW / 2,
+        pageH - margin,
+        { align: 'center', maxWidth: pageW - 2 * margin }
     );
-  
+
     // 6) DESCARGA
     const filename = `tarjeta_${data.nombre.replace(/\s+/g, '_')}.pdf`;
     doc.save(filename);
-  }
-  
+}
