@@ -17,7 +17,7 @@ let lastDataObject  = null;
 // 1) BUSCAR PRODUCTO
 async function sendToWebhook(productName) {
   actions.classList.add('hidden');
-  responseContainer.innerHTML = `<p class="text-yellow-400 italic">Buscando "${productName}"…</p>`;
+  responseContainer.innerHTML = `<p class="text-yellow-400 italic">Buscando \"${productName}\"…</p>`;
   try {
     const res = await fetch('https://known-moccasin-magical.ngrok-free.app/webhook/generar/tarjeta/notebook', {
       method: 'POST',
@@ -26,7 +26,7 @@ async function sendToWebhook(productName) {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
-    lastDataObject = json.output;  // guardamos sólo el objeto `output`
+    lastDataObject = json.output;
     displayEditableJSON(json.output);
     actions.classList.remove('hidden');
   } catch (e) {
@@ -58,7 +58,6 @@ retryBtn.addEventListener('click', () => {
 });
 
 nextBtn.addEventListener('click', () => {
-  // parsear JSON editado
   const editor = document.getElementById('jsonEditor');
   try {
     lastDataObject = JSON.parse(editor.value);
@@ -66,7 +65,6 @@ nextBtn.addEventListener('click', () => {
     responseContainer.innerHTML = `<p class="text-red-400">JSON inválido: ${e.message}</p>`;
     return;
   }
-  // avanzar a paso 2
   step1.classList.add('hidden');
   step2.classList.remove('hidden');
 });
@@ -82,7 +80,23 @@ generateCardBtn.addEventListener('click', async () => {
   try {
     const shortUrl = await shortenUrl(url);
     status.textContent = 'Generando QR y PDF…';
-    await createPdfCard(lastDataObject, shortUrl);
+
+    // Cargamos las fuentes
+    const [regResp, itaResp, bldResp, xboldResp] = await Promise.all([
+      fetch('/fonts/medium.txt'),
+      fetch('/fonts/italic.txt'),
+      fetch('/fonts/bold.txt'),
+      fetch('/fonts/xbold.txt')
+    ]);
+    if (!regResp.ok || !itaResp.ok || !bldResp.ok || !xboldResp.ok) throw new Error('No se pudo cargar la fuente.');
+    const [regularBase64, italicBase64, boldBase64, xboldBase64] = await Promise.all([
+      regResp.text(),
+      itaResp.text(),
+      bldResp.text(),
+      xboldResp.text()
+    ]);
+
+    await createPdfCard(lastDataObject, shortUrl, regularBase64, italicBase64, boldBase64, xboldBase64);
     status.textContent = '¡Listo! Se descargó tu tarjeta.';
   } catch (e) {
     status.textContent = `Error: ${e.message}`;
@@ -90,129 +104,155 @@ generateCardBtn.addEventListener('click', async () => {
 });
 
 // TinyURL API
-// Acorta la URL usando el endpoint gratuito de TinyURL
 async function shortenUrl(url) {
-    const apiEndpoint = 'https://tinyurl.com/api-create.php?url=';
-    const resp = await fetch(apiEndpoint + encodeURIComponent(url));
-    if (!resp.ok) {
-      throw new Error(`Error al acortar URL: HTTP ${resp.status}`);
-    }
-    const shortUrl = await resp.text();       // devuelve la URL como texto plano
-    return shortUrl.trim();
+  const apiEndpoint = 'https://tinyurl.com/api-create.php?url=';
+  const resp = await fetch(apiEndpoint + encodeURIComponent(url));
+  if (!resp.ok) throw new Error(`Error al acortar URL: HTTP ${resp.status}`);
+  return (await resp.text()).trim();
+}
+
+// Genera PDF A5 con jsPDF y QRious, usando fuentes custom
+async function createPdfCard(data, shortUrl, regularB64, italicB64, boldB64, xboldB64) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ format: 'a5', unit: 'mm' });
+
+  // Limpiar posibles prefijos data: y registrar en VFS
+  const cleanReg = regularB64.replace(/^data:[^;]+;base64,/, '');
+  const cleanIta = italicB64.replace(/^data:[^;]+;base64,/, '');
+  const cleanBld = boldB64.replace(/^data:[^;]+;base64,/, '');
+  const cleanXbld = xboldB64.replace(/^data:[^;]+;base64,/, '');
+
+  doc.addFileToVFS('CustomRegular.ttf', cleanReg);
+  doc.addFileToVFS('CustomItalic.ttf', cleanIta);
+  doc.addFileToVFS('CustomBold.ttf', cleanBld);
+  doc.addFileToVFS('CustomXBold.ttf', cleanXbld);
+
+  doc.addFont('CustomRegular.ttf', 'CustomReg', 'normal');
+  doc.addFont('CustomBold.ttf', 'CustomReg', 'bold');
+  doc.addFont('CustomItalic.ttf', 'CustomReg', 'italic');
+  doc.addFont('CustomXBold.ttf', 'CustomReg', 'extrabold');
+
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 15;
+  const titleBlueRGB = [0, 51, 153];
+  const lightBlueRGB = [27, 77, 151];
+
+  // 1) NOMBRE (custom bold)
+  doc.setFont('CustomReg', 'extrabold');
+  doc.setFontSize(32);
+  doc.setTextColor(...titleBlueRGB);
+  doc.text(data.nombre, pageW / 2, margin, { align: 'center' });
+
+  // 2) QR
+  const qrSize = 50;
+  const qrX = pageW / 2 - qrSize / 2;
+  const qrY = margin + 10;
+  const qr = new QRious({ value: shortUrl, size: qrSize * 10 });
+
+  // Guardar el estado gráfico actual
+  doc.saveGraphicsState();
+
+  // Configurar el color y el ancho del borde solo para el QR
+  doc.setDrawColor(...titleBlueRGB);
+  doc.setLineWidth(1); // Ancho del borde en mm
+
+  // Dibujar el rectángulo con bordes redondeados alrededor del QR
+  const borderRadius = 2;
+  doc.roundedRect(qrX - 3, qrY - 3, qrSize + 6, qrSize + 6, borderRadius, borderRadius, 'S');
+
+  // Restaurar el estado gráfico anterior
+  doc.restoreGraphicsState();
+
+  // Agregar la imagen del QR
+  doc.addImage(qr.toDataURL(), 'PNG', qrX, qrY, qrSize, qrSize);
+
+  // Agregar la imagen del QR
+  doc.addImage(qr.toDataURL(), 'PNG', qrX, qrY, qrSize, qrSize);
+
+  // 3) Instrucción bajo QR (custom italic)
+  doc.setFont('CustomReg', 'italic');
+  doc.setFontSize(12);
+  doc.setTextColor(...lightBlueRGB);
+  doc.text(
+    'Escaneá para ver el producto en nuestra tienda web',
+    pageW / 2,
+    qrY + qrSize + 15,
+    { align: 'center', maxWidth: pageW - 2 * margin }
+  );
+
+  // 4) Bloques de especificaciones
+  const specs = Object.entries(data).filter(([k]) => k !== 'nombre');
+  const colGap = 8;
+  const usableW = pageW - 2 * margin;
+  const colW = (usableW - colGap) / 2;
+  let cursorY = qrY + qrSize + 20;
+  const headerH = 12;
+  const msgH = 12;
+  const blockH = headerH + msgH;
+  // const contentH = blockH - headerH;
+  const contentH = blockH - 7;  
+
+  for (let i = 0; i < specs.length; i += 2) {
+    const row = specs.slice(i, i + 2);
+    row.forEach(([_, val], idx) => {
+      const x = margin + idx * (colW + colGap);
+
+      doc.setDrawColor(...titleBlueRGB);
+      doc.roundedRect(x, cursorY, colW, blockH, 2, 2, 'S');
+      doc.setFillColor(...titleBlueRGB);
+      doc.roundedRect(x, cursorY, colW, headerH, 2, 2, 'F');
+
+      // Texto principal (custom bold)
+      doc.setFont('CustomReg', 'bold');
+      doc.setFontSize(20);
+      doc.setTextColor(255, 255, 255);
+      doc.text(
+        val.especificacion,
+        x + colW / 2,
+        cursorY + headerH / 2 + 3,
+        { align: 'center', maxWidth: colW - 4 }
+      );
+
+      // Texto secundario (centrado vertical y horizontalmente)
+      doc.setFont('CustomReg', 'normal');
+      const fontSizeDescription = 12;doc.setFont('CustomReg', 'normal');
+      doc.setFontSize(fontSizeDescription);
+      doc.setTextColor(...lightBlueRGB);
+      const maxTextWidth = colW - 8;
+      const lines = doc.splitTextToSize(val.mensaje, maxTextWidth);
+      const lineHeightFactor = 0.4;
+      const lineHeight = fontSizeDescription * lineHeightFactor;
+      const totalHeight = lines.length * lineHeight;
+      
+      // Calcular posición vertical
+      const startY = cursorY + headerH + (contentH - totalHeight) / 2 + lineHeight * 0.25;
+      
+      lines.forEach((line, index) => {
+        doc.text(
+          line,
+          x + colW / 2,
+          startY + index * lineHeight,
+          { align: 'center' }
+        );
+      });
+    });
+
+    cursorY += blockH + 8;
+    if (row.length === 1) cursorY += blockH + 8;
   }
   
-// Genera PDF A5 con jsPDF y QRious (layout con bloques azules y texto blanco)
-async function createPdfCard(data, shortUrl) {
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ format: 'a5', unit: 'mm' });
 
-    const pageW = doc.internal.pageSize.getWidth();
-    const pageH = doc.internal.pageSize.getHeight();
-    const margin = 15;
+  // 5) Pie de página (custom italic)
+  doc.setFont('CustomReg', 'italic');
+  doc.setFontSize(12);
+  doc.setTextColor(...lightBlueRGB);
+  doc.text(
+    'Especificaciones orientativas. Su experiencia puede variar según el uso',
+    pageW / 2,
+    pageH - margin,
+    { align: 'center', maxWidth: pageW - 2 * margin }
+  );
 
-    // Definición de colores
-    const titleBlueRGB = [0, 51, 153]; // Azul oscuro para títulos y bordes
-    const lightBlueRGB = [27, 77, 151]; // Azul celeste para textos secundarios
-
-    // 1) NOMBRE (grande y centrado)
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(32); // Tamaño grande para el título principal
-    doc.setTextColor(...titleBlueRGB); // Azul oscuro para el título
-    doc.text(data.nombre, pageW / 2, margin, { align: 'center' });
-
-    // 2) QR (centrado con borde)
-    const qrSize = 50; // Tamaño del QR
-    const qrX = pageW / 2 - qrSize / 2; // Centramos horizontalmente
-    const qrY = margin + 10;
-    const qr = new QRious({ value: shortUrl, size: qrSize * 10 });
-
-    // Dibujamos el borde alrededor del QR
-    doc.setDrawColor(...titleBlueRGB); // Usamos el mismo color que el título
-    doc.rect(qrX - 3, qrY - 3, qrSize + 6, qrSize + 6, 'S'); // Borde con margen
-
-    // Añadimos el QR dentro del borde
-    doc.addImage(qr.toDataURL(), 'PNG', qrX, qrY, qrSize, qrSize);
-
-    // 3) Instrucción bajo el QR
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(12); // Tamaño legible para la instrucción
-    doc.setTextColor(...lightBlueRGB); // Aplicamos color azul celeste
-    doc.text(
-        'Escaneá para ver el producto en nuestra tienda web',
-        pageW / 2,
-        qrY + qrSize + 8, // Espaciado ajustado
-        { align: 'center', maxWidth: pageW - 2 * margin }
-    );
-
-    // 4) BLOQUES DE ESPECIFICACIONES
-    const specs = Object.entries(data)
-        .filter(([k]) => k !== 'nombre'); // Sacamos el nombre
-    const colGap = 8;
-    const usableW = pageW - 2 * margin;
-    const colW = (usableW - colGap) / 2;
-    let cursorY = qrY + qrSize + 20; // Espaciado ajustado
-    const headerH = 12; // Alto del header
-    const msgH = 8; // Alto del mensaje
-    const blockH = headerH + msgH;
-
-    for (let i = 0; i < specs.length; i += 2) {
-        const row = specs.slice(i, i + 2);
-        row.forEach(([_, val], idx) => {
-            const x = margin + idx * (colW + colGap);
-            // 4.1) Dibujo del borde redondeado
-            doc.setDrawColor(...titleBlueRGB);
-            doc.roundedRect(x, cursorY, colW, blockH, 2, 2, 'S');
-
-            // 4.2) Header (fondo azul)
-            doc.setFillColor(...titleBlueRGB);
-            doc.roundedRect(x, cursorY, colW, headerH, 2, 2, 'F');
-
-            // 4.3) Texto de la especificación (blanco, negrita)
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(20); 
-            doc.setTextColor(255, 255, 255); // Blanco para el título
-            doc.text(
-                val.especificacion,
-                x + colW / 2,
-                cursorY + headerH / 2 + 3,
-                { align: 'center', maxWidth: colW - 4 }
-            );
-
-            // 4.4) Mensaje descriptivo (azul celeste, normal, centrado)
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(12); 
-            doc.setTextColor(...lightBlueRGB); // Aplicamos color azul celeste
-
-            // Calculamos la posición Y para centrar el mensaje
-            const messageY = cursorY + headerH + (msgH / 2) + 2;
-            doc.text(
-                val.mensaje,
-                x + colW / 2, // Centramos el texto horizontalmente
-                messageY,     // Posición Y ajustada para centrar verticalmente
-                { align: 'center', maxWidth: colW - 4 }
-            );
-        });
-
-        cursorY += blockH + 8; // Espacio vertical antes de la siguiente fila
-
-        // Si es fila impar (solo un item), avanzamos igual
-        if (row.length === 1) {
-            cursorY += blockH + 8;
-        }
-    }
-
-    // 5) PIE DE PÁGINA
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(12); // Tamaño legible para el pie de página
-    doc.setTextColor(...lightBlueRGB); // Aplicamos color azul celeste
-    doc.text(
-        'Especificaciones orientativas. Su experiencia puede variar según el uso',
-        pageW / 2,
-        pageH - margin,
-        { align: 'center', maxWidth: pageW - 2 * margin }
-    );
-
-    // 6) DESCARGA
-    const filename = `tarjeta_${data.nombre.replace(/\s+/g, '_')}.pdf`;
-    doc.save(filename);
+  doc.save(`tarjeta_${data.nombre.replace(/\s+/g, '_')}.pdf`);
 }
