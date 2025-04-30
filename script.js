@@ -18,8 +18,12 @@ let lastDataObject  = null;
 async function sendToWebhook(productName) {
   actions.classList.add('hidden');
   responseContainer.innerHTML = `<p class="text-yellow-400 italic">Buscando \"${productName}\"…</p>`;
+  
+  // const url = 'https://known-moccasin-magical.ngrok-free.app/webhook/generar/tarjeta/notebook';
+  const url = 'http://192.168.1.93:5678/webhook/generar/tarjeta/notebook';
+
   try {
-    const res = await fetch('https://known-moccasin-magical.ngrok-free.app/webhook/generar/tarjeta/notebook', {
+    const res = await fetch(url, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ producto: productName })
