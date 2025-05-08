@@ -112,10 +112,20 @@ async function createPdfCard(data, shortUrl, precio, regularB64, italicB64, bold
   doc.setFont('CustomReg','extrabold').setFontSize(32*scale).setTextColor(...titleBlueRGB)
      .text(data.nombre,pageW/2,margin,{align:'center'});
   // Precio
-  doc.setFont('CustomReg','bold').setFontSize(24*scale).setTextColor(...titleBlueRGB)
-     .text(`$ ${precio.toFixed(2)}`,pageW/2,margin+10*scale,{align:'center'});
+  // formatea con separador de miles “.” y sin decimales
+  const precioFormateado = precio.toLocaleString('es-ES', { 
+    minimumFractionDigits: 0, 
+    maximumFractionDigits: 0 
+  });
+
+  doc
+    .setFont('CustomReg','bold')
+    .setFontSize(24 * scale)
+    .setTextColor(...titleBlueRGB)
+    .text(`$ ${precioFormateado}`, pageW/2, margin + 12*scale, { align: 'center' });
+
   // QR
-  const qrSize=50*scale, qrX=pageW/2-qrSize/2, qrY=margin+20*scale;
+  const qrSize=40*scale, qrX=pageW/2-qrSize/2, qrY=margin+20*scale;
   const qr=new QRious({value:shortUrl,size:qrSize*10});
   doc.saveGraphicsState().setDrawColor(...titleBlueRGB).setLineWidth(1)
      .roundedRect(qrX-3*scale,qrY-3*scale,qrSize+6*scale,qrSize+6*scale,2*scale,2*scale,'S')
