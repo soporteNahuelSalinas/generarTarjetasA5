@@ -63,7 +63,7 @@ nextBtn.addEventListener('click', () => {
   step2.classList.remove('hidden');
 });
 
-// 3) STEP2: URL + GENERAR JPEG
+// 3) STEP2: URL + GENERAR PDF
 generateCardBtn.addEventListener('click', async () => {
   const url    = productUrlInput.value.trim();
   const precio = parseFloat(priceInput.value);
@@ -72,7 +72,7 @@ generateCardBtn.addEventListener('click', async () => {
   status.textContent = 'Acortando URL…';
   try {
     const shortUrl = await shortenUrl(url);
-    status.textContent = 'Generando QR y JPEG…';
+    status.textContent = 'Generando QR y PDF…';
     const [regResp, itaResp, bldResp, xboldResp] = await Promise.all([
       fetch('/fonts/medium.txt'), fetch('/fonts/italic.txt'),
       fetch('/fonts/bold.txt'),   fetch('/fonts/xbold.txt')
@@ -81,8 +81,8 @@ generateCardBtn.addEventListener('click', async () => {
     const [regularBase64, italicBase64, boldBase64, xboldBase64] = await Promise.all([
       regResp.text(), itaResp.text(), bldResp.text(), xboldResp.text()
     ]);
-    await createJpegCard(lastDataObject, shortUrl, precio, regularBase64, italicBase64, boldBase64, xboldBase64);
-    status.textContent = '¡Listo! Se descargó tu tarjeta en JPG.';
+    await createPdfCard(lastDataObject, shortUrl, precio, regularBase64, italicBase64, boldBase64, xboldBase64);
+    status.textContent = '¡Listo! Se descargó tu tarjeta.';
   } catch (e) { status.textContent = `Error: ${e.message}`; }
 });
 
@@ -93,8 +93,8 @@ async function shortenUrl(url) {
   return (await resp.text()).trim();
 }
 
-// Genera A6 en PDF con jsPDF/QRious, luego lo renderiza con PDF.js a canvas y descarga JPG
-async function createJpegCard(data, shortUrl, precio, regularB64, italicB64, boldB64, xboldB64) {
+// Genera PDF A6 con jsPDF y QRious, usando fuentes custom y factor de escala
+async function createPdfCard(data, shortUrl, precio, regularB64, italicB64, boldB64, xboldB64) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ format: 'a6', unit: 'mm' });
   const pageW = doc.internal.pageSize.getWidth();
@@ -112,9 +112,18 @@ async function createJpegCard(data, shortUrl, precio, regularB64, italicB64, bol
   doc.setFont('CustomReg','extrabold').setFontSize(32*scale).setTextColor(...titleBlueRGB)
      .text(data.nombre,pageW/2,margin,{align:'center'});
   // Precio
-  const precioFormateado = precio.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-  doc.setFont('CustomReg','bold').setFontSize(24*scale).setTextColor(...titleBlueRGB)
-     .text(`$ ${precioFormateado}`, pageW/2, margin + 12*scale, { align: 'center' });
+  // formatea con separador de miles “.” y sin decimales
+  const precioFormateado = precio.toLocaleString('es-ES', { 
+    minimumFractionDigits: 0, 
+    maximumFractionDigits: 0 
+  });
+
+  doc
+    .setFont('CustomReg','bold')
+    .setFontSize(24 * scale)
+    .setTextColor(...titleBlueRGB)
+    .text(`$ ${precioFormateado}`, pageW/2, margin + 12*scale, { align: 'center' });
+
   // QR
   const qrSize=40*scale, qrX=pageW/2-qrSize/2, qrY=margin+20*scale;
   const qr=new QRious({value:shortUrl,size:qrSize*10});
@@ -127,7 +136,7 @@ async function createJpegCard(data, shortUrl, precio, regularB64, italicB64, bol
            {align:'center',maxWidth:pageW-2*margin});
   // specs
   const specs=Object.entries(data).filter(([k])=>k!=='nombre');
-  let cursorY=qrY+qrSize+20*scale, colGap=8*scale;
+  let cursorY=qrY+qrSize+20*scale; const colGap=8*scale;
   const usableW=pageW-2*margin, colW=(usableW-colGap)/2;
   specs.forEach(([,val],i)=>{
     const idx=i%2, x=margin+idx*(colW+colGap);
@@ -138,8 +147,7 @@ async function createJpegCard(data, shortUrl, precio, regularB64, italicB64, bol
        .text(val.especificacion,x+colW/2,cursorY+12*scale/2+3*scale,{align:'center',maxWidth:colW-4*scale});
     doc.setFont('CustomReg','normal').setFontSize(12*scale).setTextColor(...lightBlueRGB);
     const lines=doc.splitTextToSize(val.mensaje,colW-8*scale), lh=12*scale*0.4;
-    const totalH=lines.length*lh;
-    const startY=cursorY+12*scale+((12*scale-7*scale)-totalH)/2+lh*0.25+6*scale;
+    const totalH=lines.length*lh, startY=cursorY+12*scale+( (12*scale-7*scale)-totalH)/2+lh*0.25 + 6 * scale; // Se mueve 6 unidades hacia abajo
     lines.forEach((ln,j)=>doc.text(ln,x+colW/2,startY+j*lh,{align:'center'}));
   });
   // pie
@@ -147,21 +155,5 @@ async function createJpegCard(data, shortUrl, precio, regularB64, italicB64, bol
      .text('Especificaciones orientativas. Su experiencia puede variar según el uso',
            pageW/2,doc.internal.pageSize.getHeight()-margin+5*scale,
            {align:'center',maxWidth:pageW-2*margin});
-
-  // --- NUEVO: renderizar PDF en canvas y descargar JPG ---
-  const pdfData = doc.output('arraybuffer');
-  const loadingTask = pdfjsLib.getDocument({ data: pdfData });
-  const pdf = await loadingTask.promise;
-  const page = await pdf.getPage(1);
-  const viewport = page.getViewport({ scale: 4 });
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-  await page.render({ canvasContext: ctx, viewport }).promise;
-  const imgData = canvas.toDataURL('image/jpeg');
-  const a = document.createElement('a');
-  a.href = imgData;
-  a.download = `tarjeta_${data.nombre.replace(/\s+/g,'_')}.jpg`;
-  a.click();
+  doc.save(`tarjeta_${data.nombre.replace(/\s+/g,'_')}.pdf`);
 }
