@@ -1,3 +1,4 @@
+// script.js
 const input             = document.getElementById('productInput');
 const priceInput        = document.getElementById('priceInput');
 const searchBtn         = document.getElementById('searchBtn');
@@ -12,14 +13,42 @@ const productUrlInput   = document.getElementById('productUrl');
 const generateCardBtn   = document.getElementById('generateCardBtn');
 const status            = document.getElementById('status');
 
+const categoryMenu      = document.getElementById('categoryMenu');
+const mainContent       = document.getElementById('mainContent');
+const title             = document.getElementById('title');
+const btnNotebook       = document.getElementById('btnNotebook');
+const btnImpresora      = document.getElementById('btnImpresora');
+const btnMonitor        = document.getElementById('btnMonitor');
+
 let lastProductName = '';
 let lastDataObject  = null;
+
+// Selección de categoría y arranque de la app
+function selectCategory(cat, label) {
+  localStorage.setItem('categoriaSeleccionada', cat);
+  title.textContent = `Tarjeta de Producto (${label})`;
+  categoryMenu.classList.add('hidden');
+  mainContent.classList.remove('hidden');
+}
+
+btnNotebook.addEventListener('click',  () => selectCategory('notebook',  'Notebook'));
+btnImpresora.addEventListener('click', () => selectCategory('impresora', 'Impresora'));
+btnMonitor.addEventListener('click',   () => selectCategory('monitor',   'Monitor'));
 
 // 1) BUSCAR PRODUCTO
 async function sendToWebhook(productName) {
   actions.classList.add('hidden');
-  responseContainer.innerHTML = `<p class="text-yellow-400 italic">Buscando \"${productName}\"…</p>`;
-  const url = 'https://known-moccasin-magical.ngrok-free.app/webhook/generar/tarjeta/notebook';
+  responseContainer.innerHTML = `<p class="text-yellow-400 italic">Buscando "${productName}"…</p>`;
+
+  // URL dinámica según categoría
+  const cat = localStorage.getItem('categoriaSeleccionada') || 'notebook';
+  const urls = {
+    notebook:   'https://known-moccasin-magical.ngrok-free.app/webhook/generar/tarjeta/notebook',
+    impresora:  'https://known-moccasin-magical.ngrok-free.app/webhook/generar/tarjeta/impresora',
+    monitor:    'https://known-moccasin-magical.ngrok-free.app/webhook/generar/tarjeta/monitor',
+  };
+  const url = urls[cat];
+
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -54,11 +83,17 @@ searchBtn.addEventListener('click', () => {
   lastProductName = name;
   sendToWebhook(name);
 });
-retryBtn.addEventListener('click', () => { if (lastProductName) sendToWebhook(lastProductName); });
+retryBtn.addEventListener('click', () => {
+  if (lastProductName) sendToWebhook(lastProductName);
+});
 nextBtn.addEventListener('click', () => {
   const editor = document.getElementById('jsonEditor');
-  try { lastDataObject = JSON.parse(editor.value); } 
-  catch (e) { responseContainer.innerHTML = `<p class="text-red-400">JSON inválido: ${e.message}</p>`; return; }
+  try {
+    lastDataObject = JSON.parse(editor.value);
+  } catch (e) {
+    responseContainer.innerHTML = `<p class="text-red-400">JSON inválido: ${e.message}</p>`;
+    return;
+  }
   step1.classList.add('hidden');
   step2.classList.remove('hidden');
 });
@@ -68,8 +103,9 @@ generateCardBtn.addEventListener('click', async () => {
   const url    = productUrlInput.value.trim();
   const precio = parseFloat(priceInput.value);
   if (isNaN(precio)) { status.textContent = 'Por favor ingresa un precio válido.'; return; }
-  if (!url)       { status.textContent = 'Por favor ingresa la URL.'; return; }
+  if (!url)          { status.textContent = 'Por favor ingresa la URL.'; return; }
   status.textContent = 'Acortando URL…';
+
   try {
     const shortUrl = await shortenUrl(url);
     status.textContent = 'Generando QR y PDF…';
@@ -77,18 +113,31 @@ generateCardBtn.addEventListener('click', async () => {
       fetch('/fonts/medium.txt'), fetch('/fonts/italic.txt'),
       fetch('/fonts/bold.txt'),   fetch('/fonts/xbold.txt')
     ]);
-    if (!regResp.ok||!itaResp.ok||!bldResp.ok||!xboldResp.ok) throw new Error('No se pudo cargar la fuente.');
+    if (!regResp.ok||!itaResp.ok||!bldResp.ok||!xboldResp.ok)
+      throw new Error('No se pudo cargar la fuente.');
+
     const [regularBase64, italicBase64, boldBase64, xboldBase64] = await Promise.all([
       regResp.text(), itaResp.text(), bldResp.text(), xboldResp.text()
     ]);
-    await createPdfCard(lastDataObject, shortUrl, precio, regularBase64, italicBase64, boldBase64, xboldBase64);
+
+    await createPdfCard(
+      lastDataObject,
+      shortUrl,
+      precio,
+      regularBase64,
+      italicBase64,
+      boldBase64,
+      xboldBase64
+    );
     status.textContent = '¡Listo! Se descargó tu tarjeta.';
-  } catch (e) { status.textContent = `Error: ${e.message}`; }
+  } catch (e) {
+    status.textContent = `Error: ${e.message}`;
+  }
 });
 
 // TinyURL API
 async function shortenUrl(url) {
-  const resp = await fetch('https://tinyurl.com/api-create.php?url='+encodeURIComponent(url));
+  const resp = await fetch('https://tinyurl.com/api-create.php?url=' + encodeURIComponent(url));
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return (await resp.text()).trim();
 }
@@ -101,59 +150,95 @@ async function createPdfCard(data, shortUrl, precio, regularB64, italicB64, bold
   const scale = pageW/148;
   const margin = 15*scale;
   const titleBlueRGB=[0,51,153], lightBlueRGB=[27,77,151];
+
   // cargar fuentes
-  [regularB64,italicB64,boldB64,xboldB64].forEach((b64,i)=>{
-    const clean=b64.replace(/^data:[^;]+;base64,/,'');
-    const name=['CustomRegular','CustomItalic','CustomBold','CustomXBold'][i]+'.ttf';
-    doc.addFileToVFS(name,clean);
-    doc.addFont(name,'CustomReg',['normal','italic','bold','extrabold'][i]);
-  });
-  // Nombre
-  doc.setFont('CustomReg','extrabold').setFontSize(32*scale).setTextColor(...titleBlueRGB)
-     .text(data.nombre,pageW/2,margin,{align:'center'});
-  // Precio
-  // formatea con separador de miles “.” y sin decimales
-  const precioFormateado = precio.toLocaleString('es-ES', { 
-    minimumFractionDigits: 0, 
-    maximumFractionDigits: 0 
+  [regularB64, italicB64, boldB64, xboldB64].forEach((b64, i) => {
+    const clean = b64.replace(/^data:[^;]+;base64,/, '');
+    const name  = ['CustomRegular','CustomItalic','CustomBold','CustomXBold'][i] + '.ttf';
+    doc.addFileToVFS(name, clean);
+    doc.addFont(name, 'CustomReg', ['normal','italic','bold','extrabold'][i]);
   });
 
-  doc
-    .setFont('CustomReg','bold')
-    .setFontSize(24 * scale)
-    .setTextColor(...titleBlueRGB)
-    .text(`$ ${precioFormateado}`, pageW/2, margin + 12*scale, { align: 'center' });
+  // Nombre
+  doc.setFont('CustomReg','extrabold')
+     .setFontSize(32*scale)
+     .setTextColor(...titleBlueRGB)
+     .text(data.nombre, pageW/2, margin, { align: 'center' });
+
+  // Precio
+  const precioFormateado = precio.toLocaleString('es-ES', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  });
+  doc.setFont('CustomReg','bold')
+     .setFontSize(24*scale)
+     .setTextColor(...titleBlueRGB)
+     .text(`$ ${precioFormateado}`, pageW/2, margin + 12*scale, { align: 'center' });
 
   // QR
-  const qrSize=40*scale, qrX=pageW/2-qrSize/2, qrY=margin+20*scale;
-  const qr=new QRious({value:shortUrl,size:qrSize*10});
-  doc.saveGraphicsState().setDrawColor(...titleBlueRGB).setLineWidth(1)
-     .roundedRect(qrX-3*scale,qrY-3*scale,qrSize+6*scale,qrSize+6*scale,2*scale,2*scale,'S')
-     .restoreGraphicsState().addImage(qr.toDataURL(),'PNG',qrX,qrY,qrSize,qrSize);
-  // texto QR
-  doc.setFont('CustomReg','italic').setFontSize(12*scale).setTextColor(...lightBlueRGB)
-     .text('Escaneá para ver el producto en nuestra tienda web',pageW/2,qrY+qrSize+15*scale,
-           {align:'center',maxWidth:pageW-2*margin});
-  // specs
-  const specs=Object.entries(data).filter(([k])=>k!=='nombre');
-  let cursorY=qrY+qrSize+20*scale; const colGap=8*scale;
-  const usableW=pageW-2*margin, colW=(usableW-colGap)/2;
-  specs.forEach(([,val],i)=>{
-    const idx=i%2, x=margin+idx*(colW+colGap);
-    if(idx===0&&i>0) cursorY+=((12*scale+12*scale)+8*scale);
-    doc.setDrawColor(...titleBlueRGB).roundedRect(x,cursorY,colW,12*scale+12*scale,2*scale,2*scale,'S')
-       .setFillColor(...titleBlueRGB).roundedRect(x,cursorY,colW,12*scale,2*scale,2*scale,'F');
-    doc.setFont('CustomReg','bold').setFontSize(20*scale).setTextColor(255,255,255)
-       .text(val.especificacion,x+colW/2,cursorY+12*scale/2+3*scale,{align:'center',maxWidth:colW-4*scale});
-    doc.setFont('CustomReg','normal').setFontSize(12*scale).setTextColor(...lightBlueRGB);
-    const lines=doc.splitTextToSize(val.mensaje,colW-8*scale), lh=12*scale*0.4;
-    const totalH=lines.length*lh, startY=cursorY+12*scale+( (12*scale-7*scale)-totalH)/2+lh*0.25 + 6 * scale; // Se mueve 6 unidades hacia abajo
-    lines.forEach((ln,j)=>doc.text(ln,x+colW/2,startY+j*lh,{align:'center'}));
+  const qrSize = 40*scale, qrX = pageW/2 - qrSize/2, qrY = margin + 20*scale;
+  const qr = new QRious({ value: shortUrl, size: qrSize*10 });
+  doc.saveGraphicsState()
+     .setDrawColor(...titleBlueRGB)
+     .setLineWidth(1)
+     .roundedRect(qrX-3*scale, qrY-3*scale, qrSize+6*scale, qrSize+6*scale, 2*scale, 2*scale, 'S')
+     .restoreGraphicsState()
+     .addImage(qr.toDataURL(), 'PNG', qrX, qrY, qrSize, qrSize);
+
+  doc.setFont('CustomReg','italic')
+     .setFontSize(12*scale)
+     .setTextColor(...lightBlueRGB)
+     .text(
+       'Escaneá para ver el producto en nuestra tienda web',
+       pageW/2,
+       qrY + qrSize + 15*scale,
+       { align:'center', maxWidth: pageW - 2*margin }
+     );
+
+  // Specs
+  const specs = Object.entries(data).filter(([k]) => k!=='nombre');
+  let cursorY = qrY + qrSize + 20*scale;
+  const colGap = 8*scale;
+  const usableW = pageW - 2*margin;
+  const colW = (usableW - colGap)/2;
+
+  specs.forEach(([, val], i) => {
+    const idx = i % 2, x = margin + idx*(colW+colGap);
+    if (idx === 0 && i>0) cursorY += ((12*scale+12*scale)+8*scale);
+
+    doc.setDrawColor(...titleBlueRGB)
+       .roundedRect(x, cursorY, colW, 12*scale+12*scale, 2*scale, 2*scale, 'S')
+       .setFillColor(...titleBlueRGB)
+       .roundedRect(x, cursorY, colW, 12*scale, 2*scale, 2*scale, 'F');
+
+    doc.setFont('CustomReg','bold')
+       .setFontSize(20*scale)
+       .setTextColor(255,255,255)
+       .text(val.especificacion, x+colW/2, cursorY+12*scale/2+3*scale, { align:'center', maxWidth: colW-4*scale });
+
+    doc.setFont('CustomReg','normal')
+       .setFontSize(12*scale)
+       .setTextColor(...lightBlueRGB);
+
+    const lines = doc.splitTextToSize(val.mensaje, colW-8*scale);
+    const lh = 12*scale*0.4;
+    const totalH = lines.length * lh;
+    const startY = cursorY + 12*scale + ((12*scale-7*scale)-totalH)/2 + lh*0.25 + 6*scale;
+    lines.forEach((ln, j) =>
+      doc.text(ln, x+colW/2, startY + j*lh, { align:'center' })
+    );
   });
-  // pie
-  doc.setFont('CustomReg','italic').setFontSize(12*scale).setTextColor(...lightBlueRGB)
-     .text('Especificaciones orientativas. Su experiencia puede variar según el uso',
-           pageW/2,doc.internal.pageSize.getHeight()-margin+5*scale,
-           {align:'center',maxWidth:pageW-2*margin});
+
+  // Pie
+  doc.setFont('CustomReg','italic')
+     .setFontSize(12*scale)
+     .setTextColor(...lightBlueRGB)
+     .text(
+       'Especificaciones orientativas. Su experiencia puede variar según el uso',
+       pageW/2,
+       doc.internal.pageSize.getHeight() - margin + 5*scale,
+       { align:'center', maxWidth: pageW - 2*margin }
+     );
+
   doc.save(`tarjeta_${data.nombre.replace(/\s+/g,'_')}.pdf`);
 }
